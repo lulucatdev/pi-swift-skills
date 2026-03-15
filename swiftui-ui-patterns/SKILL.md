@@ -28,6 +28,7 @@ Choose a track based on your goal:
 ## General rules to follow
 
 - Use modern SwiftUI state (`@State`, `@Binding`, `@Observable`, `@Environment`) and avoid unnecessary view models.
+- If the deployment target includes iOS 16 or earlier and cannot use the Observation API introduced in iOS 17, fall back to `ObservableObject` with `@StateObject` for root ownership, `@ObservedObject` for injected observation, and `@EnvironmentObject` only for truly shared app-level state.
 - Prefer composition; keep views small and focused.
 - Use async/await with `.task` and explicit loading/error states.
 - Maintain existing legacy patterns only when editing legacy files.
