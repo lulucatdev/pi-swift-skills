@@ -1,64 +1,159 @@
 ---
 name: simplify-code
-description: "Run a multi-agent review of changed files for reuse, quality, efficiency, and clarity issues followed by automated fixes. Use when the user asks to \"simplify code\", \"review changed code\", \"check for code reuse\", \"review code quality\", \"review efficiency\", \"simplify changes\", \"clean up code\", \"refactor changes\", or \"run simplify\"."
+description: "Review a git diff or explicit file scope for reuse, code quality, efficiency, clarity, and standards issues, then optionally apply safe Codex-driven fixes. Use when the user asks to \"simplify code\", \"review changed code\", \"check for code reuse\", \"review code quality\", \"review efficiency\", \"simplify changes\", \"clean up code\", \"refactor changes\", or \"run simplify\"."
 ---
 
 # Simplify Code
 
-Review all changed files for reuse, quality, and efficiency. Fix any issues found.
+Review changed code for reuse, quality, efficiency, and clarity issues. Apply only high-confidence, behavior-preserving fixes unless the user explicitly wants review only.
 
-## Step 1: Determine the Diff Command
+## Modes
 
-Determine the appropriate diff command (e.g. `git diff`, `git diff --cached`, `git diff HEAD`) based on the current git state. If the caller specifies which diff command to use, use that. Do NOT run the diff yourself — each review agent will run it independently to keep the diff out of the main agent's context.
+Choose the mode from the user's request:
 
-If there are no git changes, review the most recently modified files that the user mentioned or that you edited earlier in this conversation.
+- `review-only`: user asks to review, audit, or check the changes
+- `safe-fixes`: user asks to simplify, clean up, or refactor the changes
+- `fix-and-validate`: same as `safe-fixes`, but also run the smallest relevant validation after edits
 
-## Step 2: Launch Four Review Agents in Parallel
+If the user does not specify, default to:
 
-Use the Agent tool to launch all four agents in a single message (`model: "opus"`, do not set `run_in_background`). Instruct each agent to run the diff command itself to obtain the diff.
+- `review-only` for "review", "audit", or "check"
+- `safe-fixes` for "simplify", "clean up", or "refactor"
 
-### Agent 1: Code Reuse Review
+## Step 1: Define Scope
 
-For each change:
+Prefer this scope order:
 
-1. **Search for existing utilities and helpers** that could replace newly written code. Look for similar patterns elsewhere in the codebase — common locations are utility directories, shared modules, and files adjacent to the changed ones.
-2. **Flag any new function that duplicates existing functionality.** Suggest the existing function to use instead.
-3. **Flag any inline logic that could use an existing utility** — hand-rolled string manipulation, manual path handling, custom environment checks, ad-hoc type guards, and similar patterns are common candidates.
+1. Files or paths explicitly named by the user
+2. Current git changes
+3. Files edited earlier in the current Codex turn
+4. Most recently modified tracked files, only if the user asked for a review but there is no diff
 
-### Agent 2: Code Quality Review
+If there is no clear scope, stop and say so briefly.
 
-Review the same changes for hacky patterns:
+When using git changes, determine the smallest correct diff command based on the repo state:
 
-1. **Redundant state**: state that duplicates existing state, cached values that could be derived, observers/effects that could be direct calls
-2. **Parameter sprawl**: adding new parameters to a function instead of generalizing or restructuring existing ones
-3. **Copy-paste with slight variation**: near-duplicate code blocks that should be unified with a shared abstraction
-4. **Leaky abstractions**: exposing internal details that should be encapsulated, or breaking existing abstraction boundaries
-5. **Stringly-typed code**: using raw strings where constants, enums (string unions), or branded types already exist in the codebase
-6. **Unnecessary JSX nesting**: wrapper Boxes/elements that add no layout value — check if inner component props (flexShrink, alignItems, etc.) already provide the needed behavior
+- unstaged work: `git diff`
+- staged work: `git diff --cached`
+- branch or commit comparison explicitly requested by the user: use that exact diff target
+- mixed staged and unstaged work: review both
 
-### Agent 3: Efficiency Review
+Do not assume `git diff HEAD` is the right default when a smaller diff is available.
 
-Review the same changes for efficiency:
+## Step 2: Load Local Instructions
 
-1. **Unnecessary work**: redundant computations, repeated file reads, duplicate network/API calls, N+1 patterns
-2. **Missed concurrency**: independent operations run sequentially when they could run in parallel
-3. **Hot-path bloat**: new blocking work added to startup or per-request/per-render hot paths
-4. **Unnecessary existence checks**: pre-checking file/resource existence before operating (TOCTOU anti-pattern) — operate directly and handle the error
-5. **Memory**: unbounded data structures, missing cleanup, event listener leaks
-6. **Overly broad operations**: reading entire files when only a portion is needed, loading all items when filtering for one
+Before reviewing standards or applying fixes, read the repo's local instruction files and relevant project docs for the touched area. Prefer the closest applicable guidance, such as:
 
-### Agent 4: Clarity and Standards Review
+- `AGENTS.md`
+- repo workflow docs
+- architecture or style docs for the touched module
 
-Review the same changes for clarity, standards, and balance:
+Use those instructions to interpret what counts as a real issue versus an intentional local pattern.
 
-1. **Project standards**: coding conventions from CLAUDE.md not followed — import sorting, naming conventions, component patterns, error handling patterns, module style
-2. **Unnecessary complexity**: deep nesting, redundant abstractions, unclear variable or function names, comments that describe obvious code, nested ternary operators (prefer switch/if-else chains)
-3. **Unclear code**: choose clarity over brevity — explicit code is better than overly compact code. Consolidate related logic, but not at the cost of readability
-4. **Over-simplification**: overly clever solutions that are hard to understand, too many concerns combined into single functions or components, "fewer lines" prioritized over readability (dense one-liners, nested ternaries), helpful abstractions removed that were aiding code organization
-5. **Dead weight**: unnecessary comments, redundant code, abstractions that add indirection without value
+## Step 3: Decide Review Shape
 
-## Step 3: Fix Issues
+Use the smallest review shape that matches the scope:
 
-Wait for all four agents to complete. Aggregate their findings, run the diff command to get the current diff, then apply each fix directly, skipping false positives. Only edit files — do not stage, build, or test.
+- Tiny scope: review locally
+  Use this for one small file or a small diff where parallel review would add overhead.
+- Medium scope: split the review into two lanes
+  For example, one lane for reuse and quality, one lane for efficiency and clarity.
+- Large scope: run multiple Codex review lanes in parallel
+  Use this when the diff spans multiple files or concerns and parallel review will materially reduce latency.
 
-When done, briefly summarize what was fixed (or confirm the code was already clean).
+If parallel review is used, each review lane should inspect the same scope but focus on one responsibility. Keep prompts narrow and request concise, structured findings only.
+
+## Step 4: Run the Review
+
+Review the scoped changes using these categories.
+
+### Reuse
+
+- Search for existing helpers, utilities, or shared abstractions that already solve the same problem.
+- Flag duplicated functions or near-duplicate logic introduced in the change.
+- Flag inline logic that should call an existing helper instead of re-implementing it.
+
+### Code Quality
+
+- Redundant state, cached values, or derived values stored unnecessarily
+- Parameter sprawl caused by threading new arguments through existing call chains
+- Copy-paste with slight variation that should become a shared abstraction
+- Leaky abstractions or ownership violations across module boundaries
+- Stringly-typed values where existing typed contracts, enums, or constants already exist
+
+### Efficiency
+
+- Repeated work, duplicate reads, duplicate API calls, or unnecessary recomputation
+- Sequential work that could safely run concurrently
+- New work added to startup, render, request, or other hot paths without clear need
+- Pre-checks for existence when the operation itself can be attempted directly and errors handled
+- Memory growth, missing cleanup, or listener/subscription leaks
+- Overly broad reads or scans when the code only needs a subset
+
+### Clarity and Standards
+
+- Violations of local project conventions or module patterns
+- Unnecessary complexity, deep nesting, weak names, or redundant comments
+- Overly compact or clever code that reduces readability
+- Over-simplification that collapses separate concerns into one unclear unit
+- Dead code, dead abstractions, or indirection without value
+
+Only report issues that materially improve maintainability, correctness, or cost. Do not churn code just to make it look different.
+
+## Step 5: Return Structured Findings
+
+Whether reviewing locally or in parallel, normalize findings into this shape:
+
+1. File and line or nearest symbol
+2. Category: reuse, quality, efficiency, or clarity
+3. Why it is a problem
+4. Recommended fix
+5. Confidence: high, medium, or low
+
+Discard weak or duplicative findings before editing.
+
+## Step 6: Apply Fixes Carefully
+
+In `review-only` mode, stop after reporting findings.
+
+In `safe-fixes` or `fix-and-validate` mode:
+
+- Apply only high-confidence, behavior-preserving fixes
+- Skip subjective refactors that need product or architectural judgment
+- Preserve local patterns when they are intentional or instruction-backed
+- Keep edits scoped to the reviewed files unless a small adjacent change is required to complete the fix correctly
+
+Prefer fixes like:
+
+- replacing duplicated code with an existing helper
+- removing redundant state or dead code
+- simplifying control flow without changing behavior
+- narrowing overly broad operations
+- renaming unclear locals when the scope is contained
+
+Do not stage, commit, or push changes as part of this skill.
+
+## Step 7: Validate When Required
+
+In `fix-and-validate` mode, run the smallest relevant validation for the touched scope after edits.
+
+Examples:
+
+- targeted tests for the touched module
+- typecheck or compile for the touched target
+- formatter or lint check if that is the project's real safety gate
+
+Prefer fast, scoped validation over full-suite runs unless the change breadth justifies more.
+
+If validation is skipped because the user asked not to run it, say so explicitly.
+
+## Step 8: Summarize Outcome
+
+Close with a brief result:
+
+- what was reviewed
+- what was fixed, if anything
+- what was intentionally left alone
+- whether validation ran
+
+If the code is already clean for this rubric, say that directly instead of manufacturing edits.
