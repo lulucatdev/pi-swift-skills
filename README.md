@@ -1,7 +1,7 @@
 # Swift Skills for pi
 
-> **Upstream:** Fork of [Dimillian/Skills](https://github.com/Dimillian/Skills)  
-> This project maintains pi integration for Swift and SwiftUI development skills.
+> **Upstream:** Fork of [Dimillian/Skills](https://github.com/Dimillian/Skills) (commit `05ba982`, 2026-03-29).  
+> This project only maintains pi integration for Swift and SwiftUI development skills.
 
 A collection of 9 focused development skills for Swift and SwiftUI development on Apple platforms.
 
@@ -55,9 +55,15 @@ git merge upstream/main
 ```
 
 ### Post-merge checklist
-- [ ] No new platform-specific files (.claude-plugin/, .codex/, etc.)
-- [ ] All skill names match directory names
-- [ ] SKILL.md frontmatter valid
+- [ ] No new .claude-plugin/, .codex/, .cursor-plugin/, .opencode/ files
+- [ ] Tests pass
+- [ ] No new multi-platform references in skill files
+- [ ] Update upstream version in this README
+
+| Field | Value |
+|-------|-------|
+| Upstream repo | [Dimillian/Skills](https://github.com/Dimillian/Skills) |
+| Fork base commit | `05ba982` (2026-03-29) |
 
 ## Acknowledgments
 
