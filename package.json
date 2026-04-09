@@ -1,0 +1,14 @@
+{
+  "name": "pi-swift-skills",
+  "version": "1.0.0",
+  "description": "Swift and SwiftUI development skills for pi - ported from Dimillian/Skills",
+  "type": "module",
+  "keywords": ["pi-package", "pi", "swift", "swiftui", "ios", "macos"],
+  "author": "Lulucatdev (pi fork)",
+  "license": "MIT",
+  "pi": {
+    "extensions": [
+      "./extensions/swift-settings"
+    ]
+  }
+}
